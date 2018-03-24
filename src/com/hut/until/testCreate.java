@@ -3,34 +3,38 @@ package com.hut.until;
 import com.alibaba.fastjson.JSON;
 import com.hut.bean.*;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.poi.hwpf.extractor.WordExtractor;
-import sun.text.resources.FormatData;
 
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.sql.Time;
 import java.util.Date;
 import java.util.LinkedList;
 
 public class testCreate {
 
 
-    private static BeanForDoc beanForDoc;
-    private static BeanForPaper beanForPaper;
+    private static BeanForDoc2 beanForDoc;
+    private static BeanForPaper2 beanForPaper;
+
+    private static String baseUrl ="http://10.12.198.100:9200/" ;
 
 
     public static void main(String args[]) {
-        beanForDoc = new BeanForDoc();
-        beanForPaper = new BeanForPaper();
-//        traverseFolder1("H:\\index");
+     //   baseUrl= "http://127.0.0.1:9200/";
 
-        traverseFolder1("G:\\test");
+        beanForDoc = new BeanForDoc2();
+        beanForPaper = new BeanForPaper2();
+        traverseFolder1("H:\\index");
+
+//        traverseFolder1("G:\\test");
 
     }
 
@@ -43,11 +47,9 @@ public class testCreate {
             for (File file2 : files) {
                 if (file2.isDirectory()) {
                     System.out.println("根目录文件夹:" + file2.getName());
-                    if(file2.getName().equals("document")){
+//                    if(file2.getName().equals("document"))
                         //公文
-                        createEmptryIndex( file2.getName());
-                    }
-
+                    createEmptryIndex( file2.getName());
                     list.add(file2);
 
                     folderNum++;
@@ -64,7 +66,10 @@ public class testCreate {
                     for (File file2 : files) {
                         if (file2.isDirectory()) {
                             System.out.println("文件夹-:" + file2.getAbsolutePath());
-                            createStructIndex(file2.getAbsolutePath());
+                            if(file2.getParentFile().getName().equals("document"))
+                                createStructIndex(file2.getAbsolutePath(),CreateFromIndex.JSON_DOC);
+                            else if(file2.getParentFile().getName().equals("paper"))
+                                createStructIndex(file2.getAbsolutePath(),CreateFromIndex.JSON_PAPER);
                             list.add(file2);
                             folderNum++;
                         } else {
@@ -74,7 +79,7 @@ public class testCreate {
 
                             if("document".equals(res))
                                 createDocData(file2.getAbsolutePath(),file2.getName(),file2.length());
-                            else if("bachelor".equals(res))
+                            else if("paper".equals(res))
                                 createPaperDate(file2.getAbsolutePath(),file2.getName(),file2.length());
                             fileNum++;
                         }
@@ -94,18 +99,21 @@ public class testCreate {
         beanForPaper.setUpload_time(new Date());
         beanForPaper.setSize((int) totalSpace);
         beanForPaper.setUploader("reoger");
+        beanForPaper.setName(fileName);
+
+        int length = fileName.indexOf(".");
+        String author = fileName.substring(0,length==-1?fileName.length():length);
+        beanForPaper.setAuthor(author);
 
         String content = null;
-        if(fileName.endsWith("pdf"))
+        if(fileName.endsWith("pdf")||fileName.endsWith("PDF"))
             content = ReadPDF(absolutePath);
-        else if(fileName.endsWith("doc"))
+        else if(fileName.endsWith("doc")||fileName.endsWith("DOC"))
             content = ReadWord(absolutePath);
         beanForPaper.setContent(content!=null?content:"无法识别");
 
-
-
-        System.out.println(absolutePath);
-        String downLink = upFile(fileName,absolutePath);
+       // String downLink = upFile(fileName,absolutePath);
+        String downLink = "http://reoger.tk";
         beanForPaper.setDown_link(downLink);
 
         String jsonString = JSON.toJSONString(beanForPaper);
@@ -114,7 +122,7 @@ public class testCreate {
         try {
             String temp = URLEncoder.encode(splits[2].toLowerCase(), "UTF-8");
             String file = URLEncoder.encode(splits[3].toLowerCase(), "UTF-8");
-             String url = "http://172.22.66.245:9200/" + temp + "/" + file;
+             String url = baseUrl + temp + "/" + file;
 
 
             HttpRequest.sendPost(url,jsonString);
@@ -148,19 +156,22 @@ public class testCreate {
             content = ReadPDF(absolutePath);
         else if(fileName.endsWith("doc"))
             content = ReadWord(absolutePath);
-        String downLink = upFile(fileName,absolutePath);
+//        String downLink = upFile(fileName,absolutePath);
+        String downLink = "http://reoger.tk";
         beanForDoc.setContent(content);
-        beanForDoc.setInteger((int) totalSpace);
+        beanForDoc.setSize((int) totalSpace);
         beanForDoc.setDown_link(downLink);
         beanForDoc.setName(fileName);
+
         beanForDoc.setUpload_time(new Date());
+        beanForDoc.setUpdate_time(new Date());
         String jsonString = JSON.toJSONString(beanForDoc);
         String[] splits = absolutePath.split("\\\\");
 
         try {
             String temp = URLEncoder.encode(splits[2].toLowerCase(), "UTF-8");
             String file = URLEncoder.encode(splits[3].toLowerCase(), "UTF-8");
-            String url = "http://172.22.66.245:9200/" + temp + "/" + file;
+            String url = baseUrl + temp + "/" + file;
 
             HttpRequest.sendPost(url,jsonString);
         } catch (UnsupportedEncodingException e) {
@@ -173,17 +184,24 @@ public class testCreate {
     private static String ReadWord(String absolutePath) {
         File file = new File(absolutePath);
         String result;
-        FileInputStream fis;
+        FileInputStream fis = null;
         try{
             fis = new FileInputStream(file);
             WordExtractor wordExtractor = new WordExtractor(fis);
             result = wordExtractor.getText();
             result = result.replaceAll("\\s*","");
+            wordExtractor.close();
             return result;
 
         }catch (Exception e){
             e.printStackTrace();
             return null;
+        }finally {
+            try {
+                fis.close();
+             } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
 
     }
@@ -203,28 +221,32 @@ public class testCreate {
             stripper.setStartPage(1);
             stripper.setEndPage(pages);
             String content = stripper.getText(document);
+            document.close();
             return content;
         } catch (Exception e) {
             e.printStackTrace();
             return null;
+        } finally {
+
+
         }
     }
 
-    private static String createStructIndex(String absolutePath) {
+    private static String createStructIndex(String absolutePath,String str) {
         String[] splits = absolutePath.split("\\\\");
 
         try {
 
             String temp = URLEncoder.encode(splits[2].toLowerCase(), "UTF-8");
             String file = URLEncoder.encode(splits[3].toLowerCase(), "UTF-8");
-            String url = "http://172.22.66.245:9200/" + temp + "/" + file + "/_mappings";
+            String url = baseUrl + temp + "/" + file + "/_mappings";
 
-            String res = CreateFromIndex.JSON_DOC.replace("reoger", splits[3].toLowerCase());
+            String res = str.replace("reoger", splits[3].toLowerCase());
         //    System.out.println(res);
 
             String sh = HttpRequest.sendPost(url, res);
 
-            System.out.println(sh);
+            return sh;
         } catch (UnsupportedEncodingException e) {
             e.printStackTrace();
         }
@@ -244,7 +266,7 @@ public class testCreate {
 
         try {
             String temp = URLEncoder.encode(IndexName.toLowerCase(), "UTF-8");
-            String url = "http://172.22.66.245:9200/" + temp;
+            String url = baseUrl + temp;
 
         //    System.out.println(url);
             return HttpRequest.sendPut(url, str);
@@ -264,10 +286,9 @@ public class testCreate {
             Path path = new Path("hdfs://172.22.66.245:9090/input");
             System.out.println("upload file --- "+absolutePath);
 
-            Path localPath = new Path(absolutePath);
-
-            FileSystem fs = path.getFileSystem(conf);
-            fs.copyFromLocalFile(localPath,path);
+//            Path localPath = new Path(absolutePath);
+//            FileSystem fs = path.getFileSystem(conf);
+//            fs.copyFromLocalFile(localPath,path);
             System.out.println("end upload +++ "+absolutePath);
             String realPath = URLEncoder.encode(name,"utf-8");
             realPath = realPath.replace("++","%20%20");
